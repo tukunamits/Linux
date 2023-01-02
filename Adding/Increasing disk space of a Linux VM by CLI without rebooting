@@ -1,0 +1,180 @@
+This document guides you through the steps for adding a new disk space to your Linux system or increasing an existing volume.
+
+
+This is a “copy & paste” how-to. The easiest way to follow this tutorial is to use a command line SSH client (like putty) and simply copy and paste the commands (except where you have to provide your own information.
+
+Adding a new disk
+First add a new disk to your virtual machine within you virtualization environment.
+
+ 1	Get a list of your current disk/partition table.You can compare this output after adding the new disk.	
+fdisk -l
+
+In the output you will find your current disk(s), for example something like:
+
+Disk /dev/sda: 42.9 GB
+
+ 2	Re-scan the SCSI bus for the disk changes.	
+echo “- – -” > /sys/class/scsi_host/host0/scan
+echo “- – -” > /sys/class/scsi_host/host1/scan
+echo “- – -” > /sys/class/scsi_host/host2/scan
+echo “- – -” > /sys/class/scsi_host/host3/scan
+echo “- – -” > /sys/class/scsi_host/host4/scan
+
+ 3	Now get again the list of the disks/partition table. You will see the disk change(s) with its size.	
+fdisk -l
+
+In the output you will find the added disk, for example something like:
+
+Disk /dev/sda: 42.9 GB
+Disk /dev/sdb: 32.2 GB
+
+In case of a disk increasement, it can be that disk change is not updated, then run following command for the increased disk (sdb).	
+echo 1 > /sys/block/sdb/device/rescan
+
+ 4	Creating a new partition on the new disk, in this case, the disk is: /dev/sdb	
+fdisk /dev/sdb
+
+you will get the message below:
+
+Device contains neither a valid DOS partition table …
+
+ 5	Create a new partition	
+Type n to create a new partition
+
+ 6	Choose Primary partition	
+Type p to select primary
+
+ 7	Partition number.
+Accept the default values for the other questions. Just press enter.	
+1 , this is the first partition on this disk
+
+ 8	Write table to disk and exit	
+Type w
+
+ 9	New partition now created, with PhysicalDevicePath:	
+/dev/sdb1
+
+ 10	Initialize the new physical volume.	
+partprobe
+pvcreate /dev/sdb1
+
+Output:
+
+Physical volume “/dev/sdb1” successfully created
+
+ 11	Create a volume group on the physical volume.	vgcreate VolumeGroupName PhysicalDevicePath
+vgcreate vg_u01 /dev/sdb1
+
+Output:
+
+Volume group “vg_u01” successfully created
+
+ 12	Check the results by displaying physical volumes.	
+pvs
+
+ 13	Now create a (10 gigabyte) logical volume named LV_01 from the free extents in volume group VG_02	
+lvcreate -L 10G -n lv_u01 vg_u01
+
+ 
+
+Output:
+
+Logical volume “lv_u01” created
+
+ 14	List Logical Volumes path, needed for next step.	
+lvscan
+
+ 15	Create a file system on the logical volume.	
+mkfs.ext4 /dev/vg_u01/lv_u01
+
+ 
+
+Mounting the Logical Volume
+ 16	Create a mount folder	
+mkdir /u01
+
+ 17	Activating and Mounting the new Logical Volume.	
+mount /dev/vg_u01/lv_u01 /u01
+
+ 18	To mount the Logical Volume on system startup.	
+vi /etc/fstab
+
+Insert following line:
+
+/dev/vg_u01/lv_u01 /u01            ext4    defaults        1 1
+
+ 19	To get a list of your mounted Logical Volumes	
+df -h
+
+ 
+
+Extending a Logical Volume
+First increase the disk size of your virtual machine.
+Then follow the same steps from above, adding a new disk,  until step 10. The only difference is:
+
+Step 4.	Create an additional partition on the existing disk. So you must use here the existing disk.
+Step 7.	Partition can’t be 1. After step 4, first type p to view the existing partition(s). Increase the number with  1.
+Now follow the steps below to extend the Logical Volume:
+
+ 11	Get VG names needed for next step	
+vgs
+
+ 12	Extend the Volume Group to include the new physical volume	
+vgextend vg_u01 /dev/sdb2
+
+ 13	Get LV path needed for next step	
+lvscan
+
+ 14	Extend the LogicalVolume with the available/remaining space. Or:	
+lvextend -l +100%FREE /dev/vg_u01/lv_u01
+
+ 15	extends the logical volumne /dev/myvg/homevol to (for example) 12 gigabytes. Or:	
+lvextend -L12G /dev/vg_u01/lv_u01
+
+ 16	adds (for example) 10 gigabyte to the logical volume  from the free extents in the volume group.	
+lvextend -L+10G /dev/vg_u01/lv_u01
+
+ 17	Resize the File system	
+resize2fs /dev/vg_u01/lv_u01
+
+If you get the error below, first install e4fsprogs to support the ext4dev file system.
+resize2fs: Filesystem has unsupported feature(s) while trying to open /dev/vg_u01/lv_u01
+Couldn’t find valid filesystem superblock.
+
+yum install e4fsprogs
+
+resize4fs /dev/vg_u01/lv_u01
+
+ 18	Verify the results	
+df -h
+
+Removing a Logical Volume
+ 1	A logical volume must be closed before it can be removed.	
+umount /dev/vg_u01/lv_u01
+
+ 2	Remove logical volume(s) from the system.	
+lvremove /dev/vg_u01/lv_u01
+
+LVM Commands
+Some other useful Logical Volume Management Commands:
+
+lvdisplay	Display information about a logical volume
+lvmdiskscan	List devices that may be used as physical volumes
+lvreduce	Reduce the size of a logical volume
+lvrename	Rename a logical volume
+lvresize	Resize a logical volume
+lvs	Display logical volumes
+pvresize	Resize physical volume(s)
+pvck	Check the consistency of physical volume(s)
+pvdisplay	Display various attributes of physical volume(s)
+pvremove	Remove LVM label(s) from physical volume(s)
+vgdisplay	Display volume group information
+vgextend	Add physical volumes to a volume group
+vgmerge	Merge volume groups
+vgreduce	Remove physical volume(s) from a volume group
+vgremove	Remove volume group(s)
+vgrename	Rename a volume group
+vgsplit	Move physical volumes into a new or existing volume group
+ 
+
+Posted in ICT Knowledgebase, Linux (RHEL / CentOS)
